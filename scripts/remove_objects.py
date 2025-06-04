@@ -9,7 +9,7 @@ from diffusers import AutoPipelineForInpainting
 from diffusers.utils import make_image_grid
 import json
 
-def remove_object(frame_path, mask_path, depth_map, points_path, output_path, intrinsics):
+def remove_object(frame_path, mask_path, depth_map, points_path, output_path, intrinsics, debug, model):
     try:
         # Load frame and mask
         frame = cv2.imread(frame_path)
@@ -39,13 +39,15 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
         else:
             depth_threshold = np.percentile(depth_map, 70)
         depth_mask = (depth_map > depth_threshold).astype(np.uint8) * 255
-        print(f"Depth mask stats for {frame_path}: white_pixels={np.sum(depth_mask == 255)}")
-        depth_mask_path = os.path.join(os.path.dirname(output_path), f"depth_mask_{os.path.basename(output_path)}")
-        cv2.imwrite(depth_mask_path, depth_mask)
-        print(f"Depth mask saved as {depth_mask_path}")
+        if debug:
+            print(f"Depth mask stats for {frame_path}: white_pixels={np.sum(depth_mask == 255)}")
+            depth_mask_path = os.path.join(os.path.dirname(output_path), f"depth_mask_{os.path.basename(output_path)}")
+            cv2.imwrite(depth_mask_path, depth_mask)
+            print(f"Depth mask saved as {depth_mask_path}")
         
         combined_mask = cv2.bitwise_or(mask, depth_mask)
-        print(f"Combined mask stats for {frame_path}: white_pixels={np.sum(combined_mask == 255)}")
+        if debug:
+            print(f"Combined mask stats for {frame_path}: white_pixels={np.sum(combined_mask == 255)}")
         
         # Project points to 2D
         height, width = frame.shape[:2]
@@ -69,7 +71,8 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
                 keep_mask[i] = False
         points_flat = points_flat[keep_mask]
         colors_flat = colors_flat[keep_mask]
-        print(f"Points after filtering: {len(points_flat)}")
+        if debug:
+            print(f"Points after filtering: {len(points_flat)}")
         
         # Render filtered point cloud
         rendered_img = frame.copy()
@@ -86,28 +89,32 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
                     depth_buffer[v[i], u[i]] = z[i]
                     rendered_img[v[i], u[i]] = colors_valid[i]
         
-        # Save pre-inpainting image
-        rendered_path = os.path.join(os.path.dirname(output_path), f"rendered_{os.path.basename(output_path)}")
-        cv2.imwrite(rendered_path, rendered_img)
-        print(f"Pre-inpainting image saved as {rendered_path}")
+        if debug:
+            # Save pre-inpainting image
+            rendered_path = os.path.join(os.path.dirname(output_path), f"rendered_{os.path.basename(output_path)}")
+            cv2.imwrite(rendered_path, rendered_img)
+            print(f"Pre-inpainting image saved as {rendered_path}")
         
         # Prepare Stable Diffusion inpainting inputs
         rendered_pil = Image.fromarray(cv2.cvtColor(rendered_img, cv2.COLOR_BGR2RGB))
         sparse_mask = (rendered_img.sum(axis=2) == 0).astype(np.uint8) * 255
-        print(f"Sparse mask stats for {frame_path}: white_pixels={np.sum(sparse_mask == 255)}")
-        sparse_mask_path = os.path.join(os.path.dirname(output_path), f"sparse_mask_{os.path.basename(output_path)}")
-        cv2.imwrite(sparse_mask_path, sparse_mask)
-        print(f"Sparse mask saved as {sparse_mask_path}")
+        if debug:
+            print(f"Sparse mask stats for {frame_path}: white_pixels={np.sum(sparse_mask == 255)}")
+            sparse_mask_path = os.path.join(os.path.dirname(output_path), f"sparse_mask_{os.path.basename(output_path)}")
+            cv2.imwrite(sparse_mask_path, sparse_mask)
+            print(f"Sparse mask saved as {sparse_mask_path}")
         
         # Use SegFormer mask if non-empty
         if np.sum(mask == 255) > 0:
             final_mask = mask
         else:
             final_mask = cv2.bitwise_or(combined_mask, sparse_mask)
-            print(f"Warning: Using fallback mask for {frame_path}")
-        print(f"Final mask stats for {frame_path}: min={final_mask.min()}, max={final_mask.max()}, white_pixels={np.sum(final_mask == 255)}")
-        if final_mask.max() == 0:
-            print(f"Warning: Final mask is all black for {frame_path}")
+            if debug:
+                print(f"Warning: Using fallback mask for {frame_path}")
+        if debug:
+            print(f"Final mask stats for {frame_path}: min={final_mask.min()}, max={final_mask.max()}, white_pixels={np.sum(final_mask == 255)}")
+            if final_mask.max() == 0:
+                print(f"Warning: Final mask is all black for {frame_path}")
         
         # Dilate mask
         kernel = np.ones((5, 5), np.uint8)
@@ -116,15 +123,16 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
         mask_pil = Image.fromarray(final_mask).resize((512, 512), Image.NEAREST)
         init_image = rendered_pil.resize((512, 512), Image.LANCZOS)
         
-        # Save final mask
-        mask_path = os.path.join(os.path.dirname(output_path), f"mask_{os.path.basename(output_path)}")
-        cv2.imwrite(mask_path, final_mask)
-        print(f"Final mask saved as {mask_path}")
+        if debug:
+            # Save final mask
+            mask_path = os.path.join(os.path.dirname(output_path), f"mask_{os.path.basename(output_path)}")
+            cv2.imwrite(mask_path, final_mask)
+            print(f"Final mask saved as {mask_path}")
         
         # Run Stable Diffusion inpainting
         device = "cuda" if torch.cuda.is_available() else "cpu"
         pipe = AutoPipelineForInpainting.from_pretrained(
-            "runwayml/stable-diffusion-inpainting",
+            model,
             torch_dtype=torch.float16,
             variant="fp16"
         ).to(device)
@@ -142,10 +150,11 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
             num_inference_steps=100
         ).images[0]
         
-        # Save post-inpainting image
-        inpainted_path = os.path.join(os.path.dirname(output_path), f"inpainted_{os.path.basename(output_path)}")
-        inpainted_image.save(inpainted_path)
-        print(f"Post-inpainting image saved as {inpainted_path}")
+        if debug:
+            # Save post-inpainting image
+            inpainted_path = os.path.join(os.path.dirname(output_path), f"inpainted_{os.path.basename(output_path)}")
+            inpainted_image.save(inpainted_path)
+            print(f"Post-inpainting image saved as {inpainted_path}")
         
         # Resize and blend
         inpainted_image = inpainted_image.resize((width, height), Image.LANCZOS)
@@ -157,11 +166,12 @@ def remove_object(frame_path, mask_path, depth_map, points_path, output_path, in
         cv2.imwrite(output_path, rendered_img)
         print(f"Output saved as {output_path}")
         
-        # Save debug grid
-        grid = make_image_grid([orig_img.resize((512, 512)), mask_pil, inpainted_image], rows=1, cols=3)
-        grid_path = os.path.join(os.path.dirname(output_path), f"grid_{os.path.basename(output_path)}")
-        grid.save(grid_path)
-        print(f"Debug grid saved as {grid_path}")
+        if debug:
+            # Save debug grid
+            grid = make_image_grid([orig_img.resize((512, 512)), mask_pil, inpainted_image], rows=1, cols=3)
+            grid_path = os.path.join(os.path.dirname(output_path), f"grid_{os.path.basename(output_path)}")
+            grid.save(grid_path)
+            print(f"Debug grid saved as {grid_path}")
 
     except Exception as e:
         print(f"An error occurred for {frame_path}: {e}")
@@ -174,6 +184,10 @@ if __name__ == "__main__":
     parser.add_argument("--mask_dir", type=str, required=True, help="Directory of masks")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory for processed frames")
     parser.add_argument("--vggt_dir", type=str, default="output/vggt_results", help="Directory of VGGT results")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode to save intermediate outputs")
+    parser.add_argument("--model", type=str, default="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+                        choices=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1", "runwayml/stable-diffusion-inpainting"],
+                        help="Inpainting model to use")
     args = parser.parse_args()
     
     os.makedirs(args.output_dir, exist_ok=True)
@@ -205,4 +219,4 @@ if __name__ == "__main__":
             points_path = os.path.join(args.vggt_dir, f"points_{frame_name}.npy")
             output_path = os.path.join(args.output_dir, frame_file)
             depth_map = np.load(depth_path)
-            remove_object(frame_path, mask_path, depth_map, points_path, output_path, intrinsics)
+            remove_object(frame_path, mask_path, depth_map, points_path, output_path, intrinsics, args.debug, args.model)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project integrates **SegFormer** for semantic segmentation and **VGGT** for 3D scene reconstruction to automatically remove specified objects (e.g., bicycles) from a video. The complete pipeline includes:
+This project integrates **SegFormer** for semantic segmentation and **VGGT** for 3D scene reconstruction to automatically remove specified objects (e.g., bicycles) from a video. The pipeline includes:
 
 1. Extracting frames from the video
 2. Segmenting and masking target objects
@@ -10,6 +10,8 @@ This project integrates **SegFormer** for semantic segmentation and **VGGT** for
 4. Inpainting masked regions using depth information
 5. Computing quality metrics
 6. Reconstructing the final output video
+
+An alternative pipeline without VGGT is also provided for continuous inpainting.
 
 ## Project Structure
 
@@ -22,11 +24,10 @@ Free-NTU-of-Bicycle-ver2/
 ├── output/
 │   ├── frames/                      # Extracted frames and camera intrinsics
 │   ├── masks_npz/                   # Segmentation masks (NPZ format)
-│   ├── masked_frames/              # Masked frames (objects blacked out)
+│   ├── masked_frames/               # Masked frames (objects blacked out)
 │   ├── vggt_results/                # VGGT depth maps and point clouds
-│   ├── vggt_metrics/                # Visualizations and evaluation metrics
-│   ├── processed_frames/            # Inpainted frames
-│   └── processed_frames_continue/   # Continuously inpainted frames
+│   ├── processed_frames/            # Inpainted frames with VGGT
+│   └── processed_frames_without_vggt/ # Inpainted frames without VGGT
 ├── scripts/
 │   ├── extract_frames.py            # Frame extraction with progress bar
 │   ├── segment.py                   # SegFormer-based object segmentation
@@ -34,7 +35,7 @@ Free-NTU-of-Bicycle-ver2/
 │   ├── run_vggt.py                  # VGGT 3D reconstruction
 │   ├── visualize_vggt_metrics.py    # Metric visualization and evaluation
 │   ├── remove_objects.py            # Inpainting using segmentation and depth
-│   ├── remove_objects_continuous.py # Continuous inpainting version
+│   ├── remove_objects_without_vggt.py # Continuous inpainting without VGGT
 │   ├── reconstruct_video.py         # Frame-to-video reconstruction
 │   └── intrinsic.py                 # Camera intrinsics estimation
 ├── requirements.txt                 # Python dependencies
@@ -57,17 +58,17 @@ Set up a virtual environment and install dependencies:
 
 ```bash
 python -m venv VGGTenv
-source VGGTenv/bin/activate
+source VGGTenv/bin/activate  # On Windows: VGGTenv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Place your input video (e.g., `video.mp4`) into the `input/` directory.
+Place your input video (e.g., `video.mp4`) in the `input/` directory.
 
 ## Step-by-Step Guide
 
 ### 1. Extract Video Frames
 
-**Script**: `scripts/extract_frames.py`
+**Script**: `scripts/extract_frames.py`  
 **Function**: Extracts frames from the input video.
 
 ```bash
@@ -76,14 +77,14 @@ python scripts/extract_frames.py \
   --output_dir output/frames
 ```
 
-**Output**:
+**Output**:  
 
-* Extracted frames: `output/frames/frame_0000.jpg`, `frame_0001.jpg`, ...
-* Camera intrinsics saved in the same directory
+- Extracted frames: `output/frames/frame_0000.jpg`, `frame_0001.jpg`, ...  
+- Camera intrinsics: `output/frames/intrinsics.json`
 
 ### 2. Get Camera Intrinsics
 
-**Script**: `scripts/intrinsic.py`
+**Script**: `scripts/intrinsic.py`  
 **Function**: Estimates camera intrinsics for the extracted frames.
 
 ```bash
@@ -91,9 +92,11 @@ cd third_party/vggt
 python ../../scripts/intrinsic.py --frame_dir ../../output/frames
 ```
 
+**Output**: Updates `output/frames/intrinsics.json`
+
 ### 3. Segment Objects Using SegFormer
 
-**Script**: `scripts/segment.py`
+**Script**: `scripts/segment.py`  
 **Function**: Segments frames and generates masks for the specified object class.
 
 ```bash
@@ -104,18 +107,18 @@ python scripts/segment.py \
   --label bicycle
 ```
 
-**Supported labels**:
+**Supported labels**:  
 `road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle`
 
-**Outputs**:
+**Outputs**:  
 
-* Segmentation masks: `output/masks_npz/mask_frame_0000.npz`
-* Masked images: `output/masked_frames/frame_0000.png`
+- Segmentation masks: `output/masks_npz/mask_frame_0000.npz`, ...  
+- Masked images: `output/masked_frames/frame_0000.png`, ...
 
 ### 4. Run VGGT for 3D Reconstruction
 
-**Script**: `scripts/run_vggt.py`
-**Function**: Generates depth maps and point clouds.
+**Script**: `scripts/run_vggt.py`  
+**Function**: Generates depth maps and point clouds for 3D reconstruction.
 
 ```bash
 cd third_party/vggt
@@ -126,44 +129,68 @@ python ../../scripts/run_vggt.py \
   --sample_rate 1
 ```
 
-**Outputs**:
+**Outputs**:  
 
-* Depth maps: `depth_frame_0000.npy`
-* Point clouds: `points_frame_0000.npy`
+- Depth maps: `output/vggt_results/depth_frame_0000.npy`, ...  
+- Point clouds: `output/vggt_results/points_frame_0000.npy`, ...  
+- Processed frames list: `output/vggt_results/processed_frames.txt`
 
 ### 5. Remove Objects and Inpaint
 
-**Script**: `scripts/remove_objects.py`
-**Function**: Uses VGGT depth and masks to inpaint masked regions.
+**Script**: `scripts/remove_objects.py`  
+**Function**: Uses VGGT depth maps and point clouds along with segmentation masks to inpaint masked regions.
 
 ```bash
 python scripts/remove_objects.py \
   --frame_dir output/frames \
   --mask_dir output/masks_npz \
   --output_dir output/processed_frames \
-  --vggt_dir output/vggt_results
+  --vggt_dir output/vggt_results \
+  --debug \
+  --model diffusers/stable-diffusion-xl-1.0-inpainting-0.1
 ```
 
-**Alternative (continuous inpainting)**
-**Script**: `scripts/remove_objects_continuous.py`
-Feeds the previous output frame into the next step for temporal consistency.
+**Arguments**:  
+
+- `--debug`: Saves intermediate outputs (masks, depth maps, point clouds, and debug grids) for debugging. Omit for final output only.  
+- `--model`: Selects the inpainting model. Options:  
+  - `diffusers/stable-diffusion-xl-1.0-inpainting-0.1` (default)  
+  - `runwayml/stable-diffusion-inpainting`
+
+**Output**:  
+
+- Inpainted frames: `output/processed_frames/frame_0000.jpg`, ...  
+- If `--debug` is used, intermediate files (e.g., `mask_frame_0000.jpg`, `depth_mask_frame_0000.jpg`, `grid_frame_0000.jpg`) are saved in `output/processed_frames`.
+
+**Alternative (Continuous Inpainting without VGGT)**  
+**Script**: `scripts/remove_objects_without_vggt.py`  
+**Function**: Performs inpainting without VGGT, using the previous inpainted frame as input for continuous processing.
 
 ```bash
-python scripts/remove_objects_continuous.py \
+python scripts/remove_objects_without_vggt.py \
   --frame_dir output/frames \
   --mask_dir output/masks_npz \
-  --output_dir output/processed_frames_continue \
-  --vggt_dir output/vggt_results
+  --output_dir output/processed_frames_without_vggt \
+  --debug \
+  --model diffusers/stable-diffusion-xl-1.0-inpainting-0.1
 ```
 
-**Output**: Inpainted frames stored in `output/processed_frames` or `output/processed_frames_continue`
+**Arguments**:  
 
-*Note: This uses OpenCV’s `INPAINT_TELEA`. For better results, consider advanced methods like [LaMa](https://github.com/advimman/lama).*
+- `--debug`: Saves intermediate outputs (masks and debug grids) for debugging. Omit for final output only.  
+- `--model`: Selects the inpainting model. Options:  
+  - `diffusers/stable-diffusion-xl-1.0-inpainting-0.1` (default)  
+  - `runwayml/stable-diffusion-inpainting`
+
+**Output**:  
+
+- Inpainted frames: `output/processed_frames_without_vggt/frame_0000.jpg`, ...  
+- If `--debug` is used, intermediate files (e.g., `mask_frame_0000.jpg`, `grid_frame_0000.jpg`) are saved in `output/processed_frames_without_vggt`.
 
 ### 6. Reconstruct the Video
 
-**Script**: `scripts/reconstruct_video.py`
-**Function**: Converts processed frames back into a video.
+**Script**: `scripts/reconstruct_video.py`  
+**Function**: Combines inpainted frames into a final video.
 
 ```bash
 python scripts/reconstruct_video.py \
@@ -172,11 +199,17 @@ python scripts/reconstruct_video.py \
   --fps 30
 ```
 
-**Output**: `output_video.mp4` (final inpainted video)
+**Output**:  
+
+- Final video: `output_video.mp4`
+
+**Note**: Use `--frame_dir output/processed_frames_without_vggt` for the continuous inpainting output.
 
 ## Additional Notes
 
-* **Paths**: Adjust file paths based on your environment and directory structure.
-* **Virtual Environment**: Ensure your virtual environment is activated before running scripts.
-* **VGGT**: Requires a GPU and automatically downloads pretrained weights.
-* **Evaluation Metrics**: The project evaluates inpainting quality using PSNR, LPIPS, and FID, and visualizes 3D results.
+- **Paths**: Adjust file paths if your directory structure differs.  
+- **Virtual Environment**: Activate the virtual environment (`source VGGTenv/bin/activate`) before running scripts.  
+- **VGGT**: Requires a GPU and automatically downloads pretrained weights.  
+- **Inpainting Models**: Both models use `torch.float16` for efficiency. Ensure a compatible GPU is available.  
+- **Evaluation Metrics**: Inpainting quality is evaluated using PSNR, LPIPS, and FID, with visualizations saved in `output/vggt_metrics/`.  
+- **Debug Mode**: Use `--debug` to save intermediate outputs for troubleshooting, but omit it for faster processing and minimal storage use.

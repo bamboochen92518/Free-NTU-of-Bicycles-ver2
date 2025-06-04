@@ -42,12 +42,12 @@ video-object-removal/
 
 ## Setup Instructions
 
-### 1. Environment Setup
+### Environment Setup
 
 Clone the repository:
 
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:bamboochen92518/Free-NTU-of-Bicycles-ver2.git
 cd Free-NTU-of-Bicycles-ver2
 ```
 
@@ -59,16 +59,11 @@ source VGGTenv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set up two environments:
-
-* **`streetunveiler`**: For most scripts
-* **`VGGTenv`**: For running VGGT-related scripts
-
 Place your input video (e.g., `video.mp4`) into the `input/` directory.
 
 ## Step-by-Step Guide
 
-### 2. Extract Video Frames
+### Extract Video Frames
 
 **Script**: `scripts/extract_frames.py`
 **Function**: Extracts frames from video with progress tracking.
@@ -79,7 +74,7 @@ python scripts/extract_frames.py --video_path input/video.mp4 --output_dir outpu
 
 **Output**: `output/frames/frame_0000.jpg`, `frame_0001.jpg`, ...
 
-### 3. Segment Objects Using SegFormer
+### Segment Objects Using SegFormer
 
 **Script**: `scripts/segment.py`
 **Function**: Segments frames to identify target objects.
@@ -100,7 +95,7 @@ python scripts/segment.py \
 * Masks in `.npz` format: `output/masks_npz/mask_frame_0000.npz`
 * Masked images: `output/masked_frames/frame_0000.png`
 
-### 4. Run VGGT for 3D Reconstruction
+### Run VGGT for 3D Reconstruction
 
 **Script**: `scripts/run_vggt.py`
 **Function**: Generates depth maps and 3D point clouds.
@@ -119,7 +114,7 @@ python ../../scripts/run_vggt.py \
 * Depth: `depth_frame_0000.npy`
 * Point cloud: `points_frame_0000.npy`
 
-### 5. Remove Objects and Inpaint
+### Remove Objects and Inpaint
 
 **Script**: `scripts/remove_objects.py`
 **Function**: Uses masks and VGGT depth to inpaint masked areas.
@@ -139,7 +134,7 @@ Inpainted frames in `output/processed_frames/frame_0000.jpg`, etc.
 
 > *Note*: Uses OpenCV's `INPAINT_TELEA`. For improved quality, consider advanced inpainting methods like [LaMa](https://github.com/advimman/lama).
 
-### 6. Reconstruct the Video
+### Reconstruct the Video
 
 **Script**: `scripts/reconstruct_video.py`
 **Function**: Combines inpainted frames into a video.
@@ -153,23 +148,6 @@ python scripts/reconstruct_video.py \
 ```
 
 **Output**: Final video saved as `output_video.mp4`
-
-### 7. Run the Full Pipeline (Optional)
-
-**Script**: `scripts/run_pipeline.sh`
-**Function**: Automates the full workflow.
-
-```bash
-chmod +x scripts/run_pipeline.sh
-./scripts/run_pipeline.sh --video_path input/video.mp4 --label bicycle
-```
-
-**Options**:
-
-* `--fps`: Frame rate (default 30)
-* `--cuda_device`: GPU device index
-* `--batch_size`: VGGT batch size
-* `--sample_rate`: Sampling frequency for VGGT
 
 ## Additional Notes
 

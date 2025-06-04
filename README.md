@@ -1,40 +1,42 @@
-# Video Object Removal Project
+# Free NTU of Bicycle ver2
 
 ## Overview
 
-This project integrates **SegFormer** for semantic segmentation and **VGGT** for 3D scene reconstruction to remove specified objects (e.g., bicycles) from a video. The full pipeline includes:
+This project integrates **SegFormer** for semantic segmentation and **VGGT** for 3D scene reconstruction to automatically remove specified objects (e.g., bicycles) from a video. The complete pipeline includes:
 
 1. Extracting frames from the video
-2. Segmenting and masking specified objects
+2. Segmenting and masking target objects
 3. Performing 3D scene reconstruction
-4. Inpainting masked regions
+4. Inpainting masked regions using depth information
 5. Computing quality metrics
-6. Reconstructing the final video
+6. Reconstructing the final output video
 
 ## Project Structure
 
 ```
-video-object-removal/
+Free-NTU-of-Bicycle-ver2/
 ├── third_party/
 │   └── vggt/                        # VGGT 3D reconstruction module
 ├── input/
 │   └── video.mp4                    # Input video
 ├── output/
-│   ├── frames/                      # Extracted frames
+│   ├── frames/                      # Extracted frames and camera intrinsics
 │   ├── masks_npz/                   # Segmentation masks (NPZ format)
 │   ├── masked_frames/              # Masked frames (objects blacked out)
 │   ├── vggt_results/                # VGGT depth maps and point clouds
 │   ├── vggt_metrics/                # Visualizations and evaluation metrics
-│   └── processed_frames/            # Inpainted frames
+│   ├── processed_frames/            # Inpainted frames
+│   └── processed_frames_continue/   # Continuously inpainted frames
 ├── scripts/
 │   ├── extract_frames.py            # Frame extraction with progress bar
 │   ├── segment.py                   # SegFormer-based object segmentation
 │   ├── mask_frames.py               # Object masking utility
 │   ├── run_vggt.py                  # VGGT 3D reconstruction
 │   ├── visualize_vggt_metrics.py    # Metric visualization and evaluation
-│   ├── remove_objects.py            # Inpainting based on segmentation and depth
+│   ├── remove_objects.py            # Inpainting using segmentation and depth
+│   ├── remove_objects_continuous.py # Continuous inpainting version
 │   ├── reconstruct_video.py         # Frame-to-video reconstruction
-│   └── run_pipeline.sh              # Full pipeline execution script
+│   └── intrinsic.py                 # Camera intrinsics estimation
 ├── requirements.txt                 # Python dependencies
 ├── output_video.mp4                 # Final output video
 └── README.md                        # Project documentation
@@ -51,7 +53,7 @@ git clone git@github.com:bamboochen92518/Free-NTU-of-Bicycles-ver2.git
 cd Free-NTU-of-Bicycles-ver2
 ```
 
-Install dependencies in a virtual environment:
+Set up a virtual environment and install dependencies:
 
 ```bash
 python -m venv VGGTenv
@@ -63,21 +65,36 @@ Place your input video (e.g., `video.mp4`) into the `input/` directory.
 
 ## Step-by-Step Guide
 
-### Extract Video Frames
+### 1. Extract Video Frames
 
 **Script**: `scripts/extract_frames.py`
-**Function**: Extracts frames from video with progress tracking.
+**Function**: Extracts frames from the input video.
 
 ```bash
-python scripts/extract_frames.py --video_path input/video.mp4 --output_dir output/frames
+python scripts/extract_frames.py \
+  --video_path input/video.mp4 \
+  --output_dir output/frames
 ```
 
-**Output**: `output/frames/frame_0000.jpg`, `frame_0001.jpg`, ...
+**Output**:
 
-### Segment Objects Using SegFormer
+* Extracted frames: `output/frames/frame_0000.jpg`, `frame_0001.jpg`, ...
+* Camera intrinsics saved in the same directory
+
+### 2. Get Camera Intrinsics
+
+**Script**: `scripts/intrinsic.py`
+**Function**: Estimates camera intrinsics for the extracted frames.
+
+```bash
+cd third_party/vggt
+python ../../scripts/intrinsic.py --frame_dir ../../output/frames
+```
+
+### 3. Segment Objects Using SegFormer
 
 **Script**: `scripts/segment.py`
-**Function**: Segments frames to identify target objects.
+**Function**: Segments frames and generates masks for the specified object class.
 
 ```bash
 python scripts/segment.py \
@@ -87,21 +104,21 @@ python scripts/segment.py \
   --label bicycle
 ```
 
-**Supported labels** include:
+**Supported labels**:
 `road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle`
 
-**Output**:
+**Outputs**:
 
-* Masks in `.npz` format: `output/masks_npz/mask_frame_0000.npz`
+* Segmentation masks: `output/masks_npz/mask_frame_0000.npz`
 * Masked images: `output/masked_frames/frame_0000.png`
 
-### Run VGGT for 3D Reconstruction
+### 4. Run VGGT for 3D Reconstruction
 
 **Script**: `scripts/run_vggt.py`
-**Function**: Generates depth maps and 3D point clouds.
+**Function**: Generates depth maps and point clouds.
 
 ```bash
-cd third_party/vggt/
+cd third_party/vggt
 python ../../scripts/run_vggt.py \
   --frame_dir ../../output/frames \
   --output_dir ../../output/vggt_results \
@@ -109,50 +126,57 @@ python ../../scripts/run_vggt.py \
   --sample_rate 1
 ```
 
-**Output**:
+**Outputs**:
 
-* Depth: `depth_frame_0000.npy`
-* Point cloud: `points_frame_0000.npy`
+* Depth maps: `depth_frame_0000.npy`
+* Point clouds: `points_frame_0000.npy`
 
-### Remove Objects and Inpaint
+### 5. Remove Objects and Inpaint
 
 **Script**: `scripts/remove_objects.py`
-**Function**: Uses masks and VGGT depth to inpaint masked areas.
+**Function**: Uses VGGT depth and masks to inpaint masked regions.
 
 ```bash
-conda activate streetunveiler
 python scripts/remove_objects.py \
   --frame_dir output/frames \
   --mask_dir output/masks_npz \
   --output_dir output/processed_frames \
-  --vggt_dir output/vggt_results \
-  --label bicycle
+  --vggt_dir output/vggt_results
 ```
 
-**Output**:
-Inpainted frames in `output/processed_frames/frame_0000.jpg`, etc.
-
-> *Note*: Uses OpenCV's `INPAINT_TELEA`. For improved quality, consider advanced inpainting methods like [LaMa](https://github.com/advimman/lama).
-
-### Reconstruct the Video
-
-**Script**: `scripts/reconstruct_video.py`
-**Function**: Combines inpainted frames into a video.
+**Alternative (continuous inpainting)**
+**Script**: `scripts/remove_objects_continuous.py`
+Feeds the previous output frame into the next step for temporal consistency.
 
 ```bash
-conda activate streetunveiler
+python scripts/remove_objects_continuous.py \
+  --frame_dir output/frames \
+  --mask_dir output/masks_npz \
+  --output_dir output/processed_frames_continue \
+  --vggt_dir output/vggt_results
+```
+
+**Output**: Inpainted frames stored in `output/processed_frames` or `output/processed_frames_continue`
+
+*Note: This uses OpenCV’s `INPAINT_TELEA`. For better results, consider advanced methods like [LaMa](https://github.com/advimman/lama).*
+
+### 6. Reconstruct the Video
+
+**Script**: `scripts/reconstruct_video.py`
+**Function**: Converts processed frames back into a video.
+
+```bash
 python scripts/reconstruct_video.py \
   --frame_dir output/processed_frames \
   --output_video output_video.mp4 \
   --fps 30
 ```
 
-**Output**: Final video saved as `output_video.mp4`
+**Output**: `output_video.mp4` (final inpainted video)
 
 ## Additional Notes
 
-* **Paths**: Update paths according to your project structure.
-* **Environments**: Ensure correct Conda/venv activation during each step.
-* **VGGT**: Requires GPU acceleration. Automatically downloads the pretrained model.
-* **Metrics**: Evaluated using PSNR, LPIPS, and FID for inpainting quality. Includes depth and point cloud visualizations.
-* **SegFormer Masks**: Stored as `.npz` for compatibility with inpainting modules.
+* **Paths**: Adjust file paths based on your environment and directory structure.
+* **Virtual Environment**: Ensure your virtual environment is activated before running scripts.
+* **VGGT**: Requires a GPU and automatically downloads pretrained weights.
+* **Evaluation Metrics**: The project evaluates inpainting quality using PSNR, LPIPS, and FID, and visualizes 3D results.

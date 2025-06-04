@@ -11,6 +11,7 @@ import open3d as o3d
 from skimage.metrics import peak_signal_noise_ratio as psnr
 import lpips
 from torchvision import transforms
+import json
 
 def visualize_depth_map(depth_map, output_path, frame_shape):
     depth_normalized = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min() + 1e-6) * 255
@@ -84,10 +85,18 @@ def run_vggt(frame_dir, batch_size=2, sample_rate=1, output_dir="output/vggt_res
         orig_shape = img.size[::-1]
     if not all(orig_shape):
         raise ValueError(f"Invalid frame dimensions: {orig_shape}")
-    fx = fy = max(orig_shape) / 2
-    cx = orig_shape[1] / 2
-    cy = orig_shape[0] / 2
-    intrinsics = [fx, fy, cx, cy]
+    # Load intrinsics from JSON file
+    intrinsics_path = os.path.join(frame_dir, 'intrinsics.json')
+    if not os.path.exists(intrinsics_path):
+        raise FileNotFoundError(f"Intrinsics file not found at {intrinsics_path}")
+    with open(intrinsics_path, 'r') as f:
+        intrinsics_data = json.load(f)
+    intrinsics = [
+        intrinsics_data['fx'],
+        intrinsics_data['fy'],
+        intrinsics_data['cx'],
+        intrinsics_data['cy']
+    ]
     processed_frames = []
     psnr_values = []
     lpips_values = []

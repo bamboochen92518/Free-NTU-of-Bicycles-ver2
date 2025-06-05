@@ -202,15 +202,79 @@ To generate a binary mask video (e.g., for DiffuEraser), add the `--mask_mode` f
 
 * Final video: `output_video.mp4`
 
-To use continuous inpainting (without VGGT), set `--frame_dir output/processed_frames_without_vggt`.
-
----
-
 ## Alternative Pipeline: SegFormer + VGGT + DiffuEraser
 
-A variant of the pipeline that integrates **DiffuEraser** instead of Stable Diffusion is also supported. Refer to the `third_party/DiffuEraser` module for additional instructions.
+This variant of the pipeline uses **DiffuEraser** instead of Stable Diffusion for video inpainting. Please refer to the `third_party/DiffuEraser` directory for implementation details and additional instructions.
 
----
+### Setup Environment
+
+First, create and activate a dedicated Anaconda environment for DiffuEraser:
+
+```bash
+cd third_party/DiffuEraser
+
+# Create new conda environment
+conda create -n diffueraser python=3.9.19  
+conda activate diffueraser
+
+# Install Python dependencies
+pip install -r requirements.txt
+```
+
+### Install Pretrained Weights
+
+Ensure Git LFS is installed:
+
+```bash
+conda install -c conda-forge git-lfs
+git lfs install
+```
+
+Download the required weights:
+
+```bash
+cd weights
+
+git clone https://huggingface.co/lixiaowen/diffuEraser
+git clone https://huggingface.co/wangfuyun/PCM_Weights
+
+mkdir ProPainter
+cd ProPainter
+wget https://github.com/sczhou/ProPainter/releases/download/v0.1.0/ProPainter.pth
+wget https://github.com/sczhou/ProPainter/releases/download/v0.1.0/raft-things.pth
+wget https://github.com/sczhou/ProPainter/releases/download/v0.1.0/recurrent_flow_completion.pth
+```
+
+### Run DiffuEraser
+
+1. Reconstruct the input and binary mask videos:
+
+```bash
+cd ../../..
+python scripts/reconstruct_video.py --frame_dir output/frames --output_video input.mp4 --fps 30
+python scripts/reconstruct_video.py --frame_dir output/binary_mask/ --output_video mask.mp4 --fps 30 --mask_mode
+```
+
+2. Run the inpainting process:
+
+```bash
+cd third_party/DiffuEraser
+python run_diffueraser.py \
+  --input_video ../../input.mp4 \
+  --input_mask ../../mask.mp4 \
+  --video_length 21 \
+  --base_model_path stable-diffusion-v1-5/stable-diffusion-v1-5 \
+  --vae_path stabilityai/sd-vae-ft-mse \
+  --max_img_size 640
+```
+
+### Output
+
+The inpainted video will be saved at:
+
+```bash
+third_party/DiffuEraser/results/diffueraser_result.mp4
+```
 
 ## Additional Notes
 

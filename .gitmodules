@@ -1,3 +1,6 @@
 [submodule "third_party/vggt"]
 	path = third_party/vggt
 	url = git@github.com:facebookresearch/vggt.git
+[submodule "third_party/DiffuEraser"]
+	path = third_party/DiffuEraser
+	url = git@github.com:lixiaowen-xw/DiffuEraser.git

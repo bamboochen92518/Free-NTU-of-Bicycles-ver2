@@ -2,17 +2,21 @@ import cv2
 import os
 import argparse
 
-def frames_to_video(frame_dir, output_video_path, fps=30, scale=1.0):
+def frames_to_video(frame_dir, output_video_path, fps=30, scale=1.0, mask_mode=False):
+    # Select frames based on mask_mode
+    frame_prefix = "mask_frame_" if mask_mode else "frame_"
     frames = [
         os.path.join(frame_dir, f)
         for f in sorted(os.listdir(frame_dir))
-        if f.startswith("frame_") and f.endswith(".jpg")
+        if f.startswith(frame_prefix) and f.endswith(".jpg")
     ]
     if not frames:
-        raise ValueError("No valid frames found in the directory.")
+        raise ValueError(f"No valid frames found in the directory with prefix '{frame_prefix}'.")
     
     # Load first frame to get dimensions
     frame = cv2.imread(frames[0])
+    if frame is None:
+        raise ValueError(f"Could not read first frame: {frames[0]}")
     height, width, _ = frame.shape
     
     # Apply scaling
@@ -42,6 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_video", type=str, required=True, help="Path for output video")
     parser.add_argument("--fps", type=int, default=30, help="Frames per second")
     parser.add_argument("--scale", type=float, default=1.0, help="Scale factor for frames (e.g., 0.6667 for 2/3)")
+    parser.add_argument("--mask_mode", action="store_true", help="Use mask frames (mask_frame_*.jpg) instead of regular frames (frame_*.jpg)")
     args = parser.parse_args()
     
-    frames_to_video(args.frame_dir, args.output_video, args.fps, args.scale)
+    frames_to_video(args.frame_dir, args.output_video, args.fps, args.scale, args.mask_mode)

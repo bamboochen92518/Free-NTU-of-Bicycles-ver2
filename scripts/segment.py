@@ -6,10 +6,11 @@ from tqdm import tqdm
 from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
 import torch
 
-def segment_and_mask_frames(frame_dir, mask_dir, masked_frames_dir, label):
+def segment_and_mask_frames(frame_dir, mask_dir, masked_frames_dir, mask_output_dir, label):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    os.makedirs(mask_dir, exist_ok=True)
-    os.makedirs(masked_frames_dir, exist_ok=True)
+    os.makedirs(mask_dir, exist_ok=True)  # For input .npz masks (compatibility)
+    os.makedirs(masked_frames_dir, exist_ok=True)  # For masked frames
+    os.makedirs(mask_output_dir, exist_ok=True)  # For binary mask .jpg files
     
     # Load SegFormer model and processor
     processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b5-finetuned-cityscapes-1024-1024")
@@ -59,8 +60,13 @@ def segment_and_mask_frames(frame_dir, mask_dir, masked_frames_dir, label):
             # Create binary mask for target label
             mask = (pred_seg == target_label_id).astype(np.uint8) * 255
             
-            # Save binary mask as NPZ
+            # Save binary mask as NPZ in mask_dir (for compatibility with remove_object.py)
             np.savez_compressed(os.path.join(mask_dir, f"mask_{frame_name}.npz"), mask=mask)
+            
+            # Save binary mask as jpg in mask_output_dir
+            mask_image = Image.fromarray(mask)
+            mask_jpg_path = os.path.join(mask_output_dir, f"mask_{frame_name}.jpg")
+            mask_image.save(mask_jpg_path)
             
             # Apply mask to frame (set masked areas to black)
             if mask.shape != frame_np.shape[:2]:
@@ -71,18 +77,18 @@ def segment_and_mask_frames(frame_dir, mask_dir, masked_frames_dir, label):
             mask_binary = (mask == 255)  # Convert to boolean mask
             masked_frame[mask_binary] = [0, 0, 0]  # Black out masked areas
             
-            # Save masked frame
+            # Save masked frame in masked_frames_dir
             masked_image = Image.fromarray(masked_frame)
             output_path = os.path.join(masked_frames_dir, frame_file)
             masked_image.save(output_path)
-                
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Segment objects in video frames and apply masks")
     parser.add_argument("--frame_dir", type=str, required=True, help="Directory of input frames")
-    parser.add_argument("--mask_dir", type=str, required=True, help="Directory to save binary mask .npz files")
+    parser.add_argument("--mask_dir", type=str, required=True, help="Directory to save binary mask .npz files (for compatibility)")
     parser.add_argument("--masked_frames_dir", type=str, required=True, help="Directory to save masked frames")
+    parser.add_argument("--mask_output_dir", type=str, required=True, help="Directory to save binary mask .jpg files")
     parser.add_argument("--label", type=str, required=True, help="Object label to segment (e.g., bicycle)")
     args = parser.parse_args()
     
-    segment_and_mask_frames(args.frame_dir, args.mask_dir, args.masked_frames_dir, args.label)
+    segment_and_mask_frames(args.frame_dir, args.mask_dir, args.masked_frames_dir, args.mask_output_dir, args.label)

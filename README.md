@@ -18,7 +18,8 @@ An alternative pipeline without VGGT is also provided for continuous inpainting.
 ```
 Free-NTU-of-Bicycle-ver2/
 ├── third_party/
-│   └── vggt/                        # VGGT 3D reconstruction module
+│   ├── vggt/                        # VGGT 3D reconstruction module
+│   └── DiffuEraser/                 # DiffuEraser
 ├── input/
 │   └── video.mp4                    # Input video
 ├── output/
@@ -64,7 +65,7 @@ pip install -r requirements.txt
 
 Place your input video (e.g., `video.mp4`) in the `input/` directory.
 
-## Step-by-Step Guide
+## Step-by-Step Guide (segformer + vggt + Stable Diffusion)
 
 ### 1. Extract Video Frames
 
@@ -100,11 +101,7 @@ python ../../scripts/intrinsic.py --frame_dir ../../output/frames
 **Function**: Segments frames and generates masks for the specified object class.
 
 ```bash
-python scripts/segment.py \
-  --frame_dir output/frames \
-  --mask_dir output/masks_npz \
-  --masked_frames_dir output/masked_frames \
-  --label bicycle
+python scripts/segment.py   --frame_dir output/frames   --mask_dir output/masks_npz   --masked_frames_dir output/mask_frames   --mask_output_dir output/binary_mask   --label bicycle
 ```
 
 **Supported labels**:  
@@ -114,8 +111,9 @@ python scripts/segment.py \
 
 - Segmentation masks: `output/masks_npz/mask_frame_0000.npz`, ...  
 - Masked images: `output/masked_frames/frame_0000.png`, ...
+- binary mask: `output/binary_mask/mask_frame_0000.png`
 
-### 4. Run VGGT for 3D Reconstruction
+### 4. Run VGGT for 3D Reconstruction (optional)
 
 **Script**: `scripts/run_vggt.py`  
 **Function**: Generates depth maps and point clouds for 3D reconstruction.
@@ -135,24 +133,29 @@ python ../../scripts/run_vggt.py \
 - Point clouds: `output/vggt_results/points_frame_0000.npy`, ...  
 - Processed frames list: `output/vggt_results/processed_frames.txt`
 
-### 5. Remove Objects and Inpaint
+### 5. Remove Objects with vggt (optional)
 
 **Script**: `scripts/remove_objects.py`  
 **Function**: Uses VGGT depth maps and point clouds along with segmentation masks to inpaint masked regions.
 
 ```bash
-python scripts/remove_objects.py \
-  --frame_dir output/frames \
-  --mask_dir output/masks_npz \
-  --output_dir output/processed_frames \
-  --vggt_dir output/vggt_results \
-  --debug \
-  --model diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+python scripts/remove_objects.py   --frame_dir output/frames   --mask_dir output/masks_npz   --mask_output_dir output/binary_mask_with_vggt --render_output_dir output/mask_frames_with_vggt   --vggt_dir output/vggt_results
+```
+
+**Outputs**:  
+
+- Masked images: `output/mask_frames_with_vggt/frame_0000.png`, ...
+- binary mask: `output/binary_mask_with_vggt/mask_frame_0000.png`
+
+### 5. Inpaint
+
+```bash
+python scripts/inpainting.py   --frame_dir output/frames   --mask_dir output/binary_mask_with_vggt/   --output_dir output/processed_frame --model runwayml/stable-diffusion-inpainting
+
 ```
 
 **Arguments**:  
-
-- `--debug`: Saves intermediate outputs (masks, depth maps, point clouds, and debug grids) for debugging. Omit for final output only.  
+ 
 - `--model`: Selects the inpainting model. Options:  
   - `diffusers/stable-diffusion-xl-1.0-inpainting-0.1` (default)  
   - `runwayml/stable-diffusion-inpainting`
@@ -160,32 +163,6 @@ python scripts/remove_objects.py \
 **Output**:  
 
 - Inpainted frames: `output/processed_frames/frame_0000.jpg`, ...  
-- If `--debug` is used, intermediate files (e.g., `mask_frame_0000.jpg`, `depth_mask_frame_0000.jpg`, `grid_frame_0000.jpg`) are saved in `output/processed_frames`.
-
-**Alternative (Continuous Inpainting without VGGT)**  
-**Script**: `scripts/remove_objects_without_vggt.py`  
-**Function**: Performs inpainting without VGGT, using the previous inpainted frame as input for continuous processing.
-
-```bash
-python scripts/remove_objects_without_vggt.py \
-  --frame_dir output/frames \
-  --mask_dir output/masks_npz \
-  --output_dir output/processed_frames_without_vggt \
-  --debug \
-  --model diffusers/stable-diffusion-xl-1.0-inpainting-0.1
-```
-
-**Arguments**:  
-
-- `--debug`: Saves intermediate outputs (masks and debug grids) for debugging. Omit for final output only.  
-- `--model`: Selects the inpainting model. Options:  
-  - `diffusers/stable-diffusion-xl-1.0-inpainting-0.1` (default)  
-  - `runwayml/stable-diffusion-inpainting`
-
-**Output**:  
-
-- Inpainted frames: `output/processed_frames_without_vggt/frame_0000.jpg`, ...  
-- If `--debug` is used, intermediate files (e.g., `mask_frame_0000.jpg`, `grid_frame_0000.jpg`) are saved in `output/processed_frames_without_vggt`.
 
 ### 6. Reconstruct the Video
 
@@ -199,11 +176,15 @@ python scripts/reconstruct_video.py \
   --fps 30
 ```
 
+If you want to generate binary mask video (for DiffuEraser or other video inpainting), add an argument `--mask_mode`
+
 **Output**:  
 
 - Final video: `output_video.mp4`
 
 **Note**: Use `--frame_dir output/processed_frames_without_vggt` for the continuous inpainting output.
+
+## Method 2. segformer + vggt + DiffuEraser
 
 ## Additional Notes
 

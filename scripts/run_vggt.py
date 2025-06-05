@@ -12,6 +12,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 import lpips
 from torchvision import transforms
 import json
+from scripts.utils import render_point_cloud
 
 def visualize_depth_map(depth_map, output_path, frame_shape):
     depth_normalized = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min() + 1e-6) * 255
@@ -31,29 +32,18 @@ def save_point_cloud(points, colors, output_path):
     pcd.colors = o3d.utility.Vector3dVector(colors)
     o3d.io.write_point_cloud(output_path, pcd)
 
-def render_point_cloud(points, colors, img_shape, intrinsics):
-    height, width = img_shape
-    fx, fy, cx, cy = intrinsics
-    rendered_img = np.zeros((height, width, 3), dtype=np.uint8)
-    depth_buffer = np.full((height, width), np.inf, dtype=np.float32)
-    points = points.reshape(-1, 3)
-    colors = colors.reshape(-1, 3)
-    valid_mask = points[:, 2] > 0
-    points = points[valid_mask]
-    colors = colors[valid_mask]
-    if len(points) == 0:
-        return Image.fromarray(rendered_img)
-    u = (fx * points[:, 0] / points[:, 2] + cx).astype(np.int32)
-    v = (fy * points[:, 1] / points[:, 2] + cy).astype(np.int32)
-    valid = (u >= 0) & (u < width) & (v >= 0) & (v < height)
-    u, v = u[valid], v[valid]
-    z = points[valid, 2]
-    colors = colors[valid]
-    for i in range(len(u)):
-        if z[i] < depth_buffer[v[i], u[i]]:
-            depth_buffer[v[i], u[i]] = z[i]
-            rendered_img[v[i], u[i]] = colors[i]
-    return Image.fromarray(rendered_img)
+def load_point_cloud(input_path):
+    # Read the point cloud
+    pcd = o3d.io.read_point_cloud(input_path)
+    
+    # Convert points and colors to NumPy arrays
+    points = np.asarray(pcd.points, dtype=np.float32)
+    colors = np.asarray(pcd.colors, dtype=np.float32)
+    
+    # Convert colors from [0, 1] to [0, 255] to match save_point_cloud format
+    colors = (colors * 255.0).astype(np.uint8)
+    
+    return points, colors
 
 def compute_psnr(img1, img2):
     img1_np = np.array(img1).astype(np.float32)

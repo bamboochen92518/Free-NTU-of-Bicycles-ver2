@@ -1,3 +1,7 @@
 __pycache__
 output*
 tmp*
+input.mp4
+input_downscale.mp4
+mask.mp4
+mask_downscale.mp4

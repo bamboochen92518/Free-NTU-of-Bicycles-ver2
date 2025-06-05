@@ -55,7 +55,7 @@ def remove_object(frame_path, mask_path, output_path, intrinsics, debug, model):
         ).to(device)
         pipe.enable_model_cpu_offload()
         
-        prompt = "a vibrant urban street with colorful buildings, green trees, blue sky, and paved roads"
+        prompt = "Fill in with content similar to the surroundings"
         generator = torch.Generator(device=device).manual_seed(92)
         inpainted_image = pipe(
             prompt=prompt,
